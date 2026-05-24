@@ -18,9 +18,9 @@ public class PlayerMovement : MonoBehaviour
     void FixedUpdate()
     {
         float speed = isSprinting ? moveSpeed * sprintMultiplier : moveSpeed;
-        rb.linearVelocity = moveInput * speed;
+        Vector2 newPosition = rb.position + moveInput * speed * Time.fixedDeltaTime;
+        rb.MovePosition(newPosition);
     }
-
     public void Move(InputAction.CallbackContext context)
     {
         moveInput = context.ReadValue<Vector2>();
