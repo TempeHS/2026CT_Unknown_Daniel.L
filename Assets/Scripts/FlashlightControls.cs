@@ -20,7 +20,7 @@ public class SmoothRotateToMouse : MonoBehaviour
     [SerializeField] private Vector2 flickerInterval = new Vector2(0.05f, 0.2f); 
 
     private Light2D light2D;
-    private bool userLightOn = true; 
+    private bool userLightOn = false; 
     private bool flickerOn = true;   
     private float nextFlickerCheck;
     private float flickerOffUntil;
