@@ -7,41 +7,20 @@ using UnityEngine.Rendering.Universal;
 [RequireComponent(typeof(Light2D))]
 public class SmoothRotateToMouse : MonoBehaviour
 {
-    [Tooltip("Camera used to convert mouse screen position to world position. Defaults to Camera.main if empty.")]
     [SerializeField] private Camera cam;
-
-    [Tooltip("Player transform used as the flashlight anchor point.")]
     [SerializeField] private Transform player;
-
-    [Tooltip("Distance in world units to keep the flashlight in front of the player.")]
     [SerializeField] private float followDistance = 0.6f;
-
-    [Tooltip("Max rotation speed (degrees per second) when turning toward the mouse.")]
     [SerializeField] private float rotationSpeed = 360f;
-
-    [Tooltip("Angle offset in degrees to align sprite/light orientation (e.g., -90 for up-facing assets).")]
     [SerializeField] private float angleOffset = -90f;
-
-    [Tooltip("Mouse button index used to toggle flashlight on/off (0=Left, 1=Right, 2=Middle).")]
     [SerializeField] private int toggleMouseButton = 0;
+    [SerializeField] private ParticleSystem flashlightParticles;
 
     [Header("Horror Flicker")]
-    [Tooltip("Enables random light flicker/blackout behavior while the user light is on.")]
     [SerializeField] private bool enableFlicker = true;
-
-    [Tooltip("Chance for a short flicker event at each flicker check.")]
     [SerializeField] private float flickerChance = 0.08f;
-
-    [Tooltip("Chance for a long blackout event at each flicker check.")]
     [SerializeField] private float longBlackoutChance = 0.02f;
-
-    [Tooltip("Random duration range (seconds) for short flicker off time.")]
     [SerializeField] private Vector2 flickerOffTime = new Vector2(0.03f, 0.1f);
-
-    [Tooltip("Random duration range (seconds) for long blackout off time.")]
     [SerializeField] private Vector2 blackoutOffTime = new Vector2(0.4f, 1.2f);
-
-    [Tooltip("Random interval range (seconds) between flicker checks.")]
     [SerializeField] private Vector2 flickerInterval = new Vector2(0.05f, 0.2f);
 
     /// <summary>Cached Light2D component attached to this object.</summary>
@@ -60,6 +39,7 @@ public class SmoothRotateToMouse : MonoBehaviour
     {
         if (cam == null) cam = Camera.main;
         light2D = GetComponent<Light2D>();
+        SyncParticlePosition();
         ScheduleNextCheck();
     }
 
@@ -71,7 +51,7 @@ public class SmoothRotateToMouse : MonoBehaviour
         if (Input.GetMouseButtonDown(toggleMouseButton))
         {
             userLightOn = !userLightOn;
-            light2D.enabled = userLightOn;
+            SetFlashlightState(userLightOn);
         }
 
         if (userLightOn && enableFlicker)
@@ -87,6 +67,9 @@ public class SmoothRotateToMouse : MonoBehaviour
             player.position.y + facing.y * followDistance,
             player.position.z
         );
+
+        SyncParticlePosition();
+
     }
 
     /// <summary>
@@ -97,7 +80,7 @@ public class SmoothRotateToMouse : MonoBehaviour
         if (!flickerOn && Time.time >= flickerOffUntil)
         {
             flickerOn = true;
-            light2D.enabled = true;
+            SetFlashlightState(true);
             ScheduleNextCheck();
         }
 
@@ -127,8 +110,33 @@ public class SmoothRotateToMouse : MonoBehaviour
     private void TriggerFlickerOff(Vector2 offTimeRange)
     {
         flickerOn = false;
-        light2D.enabled = false; 
+        SetFlashlightState(false);
         flickerOffUntil = Time.time + Random.Range(offTimeRange.x, offTimeRange.y);
+    }
+
+    private void SetFlashlightState(bool isOn)
+    {
+        light2D.enabled = isOn;
+
+        if (flashlightParticles == null) return;
+
+        if (isOn)
+        {
+            if (!flashlightParticles.isPlaying)
+                flashlightParticles.Play();
+        }
+        else
+        {
+            if (flashlightParticles.isPlaying)
+                flashlightParticles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
+    }
+
+    private void SyncParticlePosition()
+    {
+        if (flashlightParticles == null) return;
+
+        flashlightParticles.transform.position = transform.position;
     }
 
     /// <summary>
