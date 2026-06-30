@@ -2608,7 +2608,7 @@ Transform:
   m_GameObject: {fileID: 437468102}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0.000052337356, w: 1}
-  m_LocalPosition: {x: 0, y: -9.09, z: -12}
+  m_LocalPosition: {x: 0, y: -4.77, z: -12}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2724,21 +2724,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 38eff76bfe338074ebedf0df62ca28ad, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  groundLayer:
-    serializedVersion: 2
-    m_Bits: 0
   maxSpeed: 9
-  acceleration: 90
-  deceleration: 60
-  jumpForce: 18
-  gravityScale: 4
-  fallMultiplier: 2.5
-  lowJumpMultiplier: 2
+  runAccel: 100
+  runReduce: 40
+  airMult: 0.65
+  jumpSpeed: 18
+  jumpHBoost: 4
+  varJumpTime: 0.2
   coyoteTime: 0.1
   jumpBufferTime: 0.15
+  fallMultiplier: 2.5
+  lowJumpMult: 2
+  gravityScale: 4
   dashSpeed: 24
-  dashTime: 0.15
-  dashCooldown: 0.2
+  dashDuration: 0.15
+  dashCooldown: 0.1
+  climbUpSpeed: 5
+  climbDownSpeed: 8
+  groundLayer:
+    serializedVersion: 2
+    m_Bits: 64
 --- !u!114 &836904725
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2768,7 +2773,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 836904724}
         m_TargetAssemblyTypeName: PlayerMovement, Assembly-CSharp
-        m_MethodName: Move
+        m_MethodName: OnMove
         m_Mode: 0
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -2832,7 +2837,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 836904724}
         m_TargetAssemblyTypeName: PlayerMovement, Assembly-CSharp
-        m_MethodName: Sprint
+        m_MethodName: OnDash
         m_Mode: 0
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -2848,7 +2853,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 836904724}
         m_TargetAssemblyTypeName: PlayerMovement, Assembly-CSharp
-        m_MethodName: Jump
+        m_MethodName: OnJump
         m_Mode: 0
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -2860,6 +2865,22 @@ MonoBehaviour:
         m_CallState: 2
     m_ActionId: 6e5c5fdf-3e6b-4c52-a9b2-91ccfbccfc86
     m_ActionName: 'Player/Jump[/Keyboard/space]'
+  - m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 836904724}
+        m_TargetAssemblyTypeName: PlayerMovement, Assembly-CSharp
+        m_MethodName: OnClimb
+        m_Mode: 0
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+    m_ActionId: a32b3638-69e4-411c-bbaf-a02c39326f49
+    m_ActionName: Player/Climb
   m_NeverAutoSwitchControlSchemes: 0
   m_DefaultControlScheme: 
   m_DefaultActionMap: Player
@@ -2956,7 +2977,7 @@ Transform:
   m_GameObject: {fileID: 836904723}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: -9.09, z: 0}
+  m_LocalPosition: {x: 0, y: -4.77, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -3226,7 +3247,7 @@ Transform:
   m_GameObject: {fileID: 997881339}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: -9.09, z: -12}
+  m_LocalPosition: {x: 0, y: -4.77, z: -12}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -5014,7 +5035,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1230176281}
   serializedVersion: 8
   lengthInSec: 5
-  simulationSpeed: 1
+  simulationSpeed: 2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -5637,14 +5658,14 @@ ParticleSystem:
     serializedVersion: 6
     enabled: 1
     type: 8
-    angle: 29
+    angle: 76
     length: 1
     boxThickness: {x: 0, y: 0, z: 0}
     radiusThickness: 1
     donutRadius: 0.2
     m_Position: {x: 0, y: 0, z: 0}
     m_Rotation: {x: 0, y: 0, z: 0}
-    m_Scale: {x: 0, y: 0.5, z: 1}
+    m_Scale: {x: 0, y: 0.1, z: 1}
     placementMode: 0
     m_MeshMaterialIndex: 0
     m_MeshNormalOffset: 0

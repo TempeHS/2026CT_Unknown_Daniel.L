@@ -1,82 +1,72 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class PlayerMovement : MonoBehaviour
 {
-    [Header("Components")]
-    private Rigidbody2D rb;
-    private BoxCollider2D coll;
+    [Header("Movement")]
+    [SerializeField] private float maxSpeed    = 9f;
+    [SerializeField] private float runAccel    = 100f;  // accel toward max speed
+    [SerializeField] private float runReduce   = 40f;   // gentle bleed when over max (preserves dash momentum)
+    [SerializeField] private float airMult     = 0.65f;
 
-    [Header("Layer Masks")]
+    [Header("Jump")]
+    [SerializeField] private float jumpSpeed       = 18f;
+    [SerializeField] private float jumpHBoost      = 4f;
+    [SerializeField] private float varJumpTime     = 0.2f;
+    [SerializeField] private float coyoteTime      = 0.1f;
+    [SerializeField] private float jumpBufferTime  = 0.1f;
+    [SerializeField] private float fallMultiplier  = 2.5f;
+    [SerializeField] private float lowJumpMult     = 2f;
+    [SerializeField] private float gravityScale    = 4f;
+
+    [Header("Dash")]
+    [SerializeField] private float dashSpeed    = 24f;
+    [SerializeField] private float dashDuration = 0.15f;
+    [SerializeField] private float dashCooldown = 0.15f;
+
+    [Header("Climb")]
+    [SerializeField] private float climbUpSpeed   = 5f;
+    [SerializeField] private float climbDownSpeed = 8f;
+
+    [Header("Detection")]
     [SerializeField] private LayerMask groundLayer;
 
-    [Header("Movement")]
-    [SerializeField] private float maxSpeed = 9f;
-    [SerializeField] private float acceleration = 90f;
-    [SerializeField] private float deceleration = 60f;
+    private Rigidbody2D   rb;
+    private BoxCollider2D coll;
+    private SpriteRenderer sprite;
+
     private Vector2 moveInput;
+    private float coyoteCounter, jumpBufferCounter, varJumpCounter, varJumpSpeed;
+    private bool  jumpHeld, canDash = true, isDashing, dashOnCooldown, climbHeld;
+    private int   facingDir = 1;
 
-    [Header("Jump Mechanics")]
-    [SerializeField] private float jumpForce = 15f;
-    [SerializeField] private float gravityScale = 4f;
-    [SerializeField] private float fallMultiplier = 2.5f;
-    [SerializeField] private float lowJumpMultiplier = 2f;
-    [SerializeField] private float coyoteTime = 0.15f;
-    [SerializeField] private float jumpBufferTime = 0.1f;
-    private float coyoteCounter;
-    private float jumpBufferCounter;
-
-    [Header("Dash Mechanics")]
-    [SerializeField] private float dashSpeed = 24f;
-    [SerializeField] private float dashTime = 0.15f;
-    [SerializeField] private float dashCooldown = 0.2f;
-    private bool canDash = true;
-    private bool isDashing;
-
-    void Start()
+    void Awake()
     {
-        rb = GetComponent<Rigidbody2D>();
-        coll = GetComponent<BoxCollider2D>();
+        rb     = GetComponent<Rigidbody2D>();
+        coll   = GetComponent<BoxCollider2D>();
+        sprite = GetComponent<SpriteRenderer>();
         rb.gravityScale = gravityScale;
     }
 
     void Update()
     {
-        // 1. Gather Directional Inputs
-        moveInput.x = Input.GetAxisRaw("Horizontal");
-        moveInput.y = Input.GetAxisRaw("Vertical");
+        if (IsGrounded()) { coyoteCounter = coyoteTime; if (!dashOnCooldown) canDash = true; }
+        else              coyoteCounter -= Time.deltaTime;
 
-        // 2. Coyote Time Management
-        if (IsGrounded())
-        {
-            coyoteCounter = coyoteTime;
-            canDash = true; // Refresh dash on ground
-        }
-        else
-        {
-            coyoteCounter -= Time.deltaTime;
-        }
+        jumpBufferCounter -= Time.deltaTime;
+        varJumpCounter    -= Time.deltaTime;
 
-        // 3. Jump Buffering Management
-        if (Input.GetButtonDown("Jump"))
-        {
-            jumpBufferCounter = jumpBufferTime;
-        }
-        else
-        {
-            jumpBufferCounter -= Time.deltaTime;
-        }
+        // Cancel variable jump window immediately on button release (Celeste behaviour)
+        if (!jumpHeld) varJumpCounter = 0f;
 
-        // 4. Trigger Jump
-        if (jumpBufferCounter > 0f && coyoteCounter > 0f)
-        {
-            Jump();
-        }
+        bool climbing = climbHeld && IsTouchingWall();
+        if (jumpBufferCounter > 0f && coyoteCounter > 0f && !climbing) Jump();
 
-        // 5. Trigger Dash
-        if (Input.GetButtonDown("Dash") && canDash && !isDashing)
+        if (moveInput.x != 0)
         {
-            StartCoroutine(PerformDash());
+            facingDir = moveInput.x > 0 ? 1 : -1;
+            if (sprite != null) sprite.flipX = facingDir < 0;
         }
     }
 
@@ -84,79 +74,113 @@ public class PlayerMovement : MonoBehaviour
     {
         if (isDashing) return;
 
-        Run();
-        ModifyPhysics();
-    }
+        bool grounded = IsGrounded();
+        bool climbing = climbHeld && IsTouchingWall();
 
-    private void Run()
-    {
-        // Calculate targeted velocity along x-axis
-        float targetSpeed = moveInput.x * maxSpeed;
-        float speedDif = targetSpeed - rb.linearVelocity.x;
-
-        // Choose between acceleration and deceleration rates
-        float accelRate = (Mathf.Abs(targetSpeed) > 0.01f) ? acceleration : deceleration;
-        float movement = speedDif * accelRate;
-
-        rb.AddForce(movement * Vector2.right, ForceMode2D.Force);
-    }
-
-    private void ModifyPhysics()
-    {
-        // Variable jump height logic (Celeste's custom gravity feel)
-        if (rb.linearVelocity.y < 0)
+        if (climbing)
         {
-            rb.gravityScale = gravityScale * fallMultiplier;
-        }
-        else if (rb.linearVelocity.y > 0 && !Input.GetButton("Jump"))
-        {
-            rb.gravityScale = gravityScale * lowJumpMultiplier;
+            rb.gravityScale = 0f;
+            // moveInput.y > 0 = up key = move up (positive Y in Unity)
+            float vy = moveInput.y > 0 ? climbUpSpeed : (moveInput.y < 0 ? -climbDownSpeed : 0f);
+            rb.linearVelocity = new Vector2(0f, vy);
         }
         else
         {
-            rb.gravityScale = gravityScale;
+            // Horizontal — Celeste-style: bleed excess speed slowly, accelerate to max quickly
+            float mult   = grounded ? 1f : airMult;
+            float target = moveInput.x * maxSpeed;
+            float vx     = rb.linearVelocity.x;
+            bool  overMax = Mathf.Abs(vx) > maxSpeed && Mathf.Sign(vx) == Mathf.Sign(moveInput.x);
+            float rate    = overMax ? runReduce : runAccel;
+            // Use AddForce so tilemap collision responses aren't overridden
+            float forceFactor = (Mathf.MoveTowards(vx, target, rate * mult * Time.fixedDeltaTime) - vx) / Time.fixedDeltaTime;
+            rb.AddForce(Vector2.right * forceFactor, ForceMode2D.Force);
+
+            float vy = rb.linearVelocity.y;
+
+            // Variable jump: clamp upward speed to initial jump speed while holding (Celeste-style)
+            if (varJumpCounter > 0f && jumpHeld)
+                vy = Mathf.Max(vy, varJumpSpeed);
+
+            // Gravity tweaks
+            if (vy < 0)
+                rb.gravityScale = gravityScale * fallMultiplier;
+            else if (vy > 0 && varJumpCounter <= 0f)
+                rb.gravityScale = gravityScale * lowJumpMult;
+            else
+                rb.gravityScale = gravityScale;
+
+            if (varJumpCounter > 0f && jumpHeld)
+                rb.linearVelocity = new Vector2(rb.linearVelocity.x, vy);
         }
+    }
+
+    // Input callbacks
+    public void OnMove(InputAction.CallbackContext ctx) => moveInput = ctx.ReadValue<Vector2>();
+
+    public void OnJump(InputAction.CallbackContext ctx)
+    {
+        if (ctx.started)  { jumpBufferCounter = jumpBufferTime; jumpHeld = true; }
+        if (ctx.canceled) jumpHeld = false;
+    }
+
+    public void OnDash(InputAction.CallbackContext ctx)
+    {
+        if (ctx.started && canDash && !isDashing) StartCoroutine(Dash());
+    }
+
+    public void OnClimb(InputAction.CallbackContext ctx)
+    {
+        if (ctx.started)  climbHeld = true;
+        if (ctx.canceled) climbHeld = false;
     }
 
     private void Jump()
     {
-        rb.linearVelocity = new Vector2(rb.linearVelocity.x, 0f); // Reset vertical speed first
-        rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
+        varJumpSpeed      = jumpSpeed;
+        rb.linearVelocity = new Vector2(rb.linearVelocity.x + moveInput.x * jumpHBoost, jumpSpeed);
+        varJumpCounter    = varJumpTime;
+        coyoteCounter     = 0f;
         jumpBufferCounter = 0f;
-        coyoteCounter = 0f;
     }
 
-    private IEnumerator PerformDash()
+    private IEnumerator Dash()
     {
-        canDash = false;
-        isDashing = true;
-        
-        // Retain gravity settings
-        float originalGravity = rb.gravityScale;
-        rb.gravityScale = 0f;
+        canDash        = false;
+        isDashing      = true;
+        dashOnCooldown = true;
 
-        // Determine 8-way directional vector or default forward if zero input
-        Vector2 dashDir = moveInput.normalized;
-        if (dashDir == Vector2.zero) 
-        {
-            dashDir = new Vector2(transform.localScale.x > 0 ? 1 : -1, 0);
-        }
+        float savedGravity    = rb.gravityScale;
+        rb.gravityScale       = 0f;
+        Vector2 dir           = moveInput.normalized;
+        if (dir == Vector2.zero) dir = new Vector2(facingDir, 0f);
+        rb.linearVelocity     = dir * dashSpeed;
 
-        // Apply raw static speed velocity over the duration of the dash
-        rb.linearVelocity = dashDir * dashSpeed;
-        yield return new WaitForSeconds(dashTime);
+        yield return new WaitForSeconds(dashDuration);
 
-        rb.gravityScale = originalGravity;
-        isDashing = false;
+        // Preserve horizontal momentum, cancel upward speed (like Celeste's EndDash)
+        rb.linearVelocity = new Vector2(rb.linearVelocity.x, Mathf.Min(rb.linearVelocity.y, 0f));
+        rb.gravityScale   = savedGravity;
+        isDashing         = false;
 
         yield return new WaitForSeconds(dashCooldown);
+        dashOnCooldown = false;
+        if (IsGrounded()) canDash = true;
     }
 
-    private bool IsGrounded()
+    private bool IsGrounded() =>
+        Physics2D.BoxCast(coll.bounds.center, new Vector2(coll.bounds.size.x - 0.1f, 0.05f),
+            0f, Vector2.down, coll.bounds.extents.y + 0.1f, groundLayer).collider != null;
+
+    private bool IsTouchingWall()
     {
-        // Simple raycast/boxcast under the player to detect ground layers
-        float extraHeight = 0.1f;
-        RaycastHit2D raycastHit = Physics2D.BoxCast(coll.bounds.center, coll.bounds.size - new Vector3(0.1f, 0f, 0f), 0f, Vector2.down, extraHeight, groundLayer);
-        return raycastHit.collider != null;
+        // Cast from center outward — avoids starting inside tilemap colliders
+        float dist = coll.bounds.extents.x + 0.1f;
+        float cy   = coll.bounds.center.y;
+        float cx   = coll.bounds.center.x;
+        float h    = coll.bounds.extents.y * 0.45f;
+        Vector2 dir = new Vector2(facingDir, 0f);
+        return Physics2D.Raycast(new Vector2(cx, cy + h), dir, dist, groundLayer)
+            || Physics2D.Raycast(new Vector2(cx, cy - h), dir, dist, groundLayer);
     }
 }

@@ -35,7 +35,7 @@
                 },
                 {
                     "name": "Shift",
-                    "type": "Value",
+                    "type": "Button",
                     "id": "02c2a872-3a43-423e-a750-7c6a3cb899bf",
                     "expectedControlType": "",
                     "processors": "",
@@ -46,6 +46,15 @@
                     "name": "Jump",
                     "type": "Value",
                     "id": "6e5c5fdf-3e6b-4c52-a9b2-91ccfbccfc86",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": true
+                },
+                {
+                    "name": "Climb",
+                    "type": "Button",
+                    "id": "a32b3638-69e4-411c-bbaf-a02c39326f49",
                     "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
@@ -287,7 +296,7 @@
                 {
                     "name": "",
                     "id": "a772bc88-1657-4daf-9121-f0a5335d4259",
-                    "path": "",
+                    "path": "<Keyboard>/x",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
@@ -309,11 +318,33 @@
                 {
                     "name": "",
                     "id": "3605fe37-0d7c-46ff-aa43-85fac894bf76",
-                    "path": "",
+                    "path": "<Keyboard>/c",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
                     "action": "Jump",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "178a8c3a-2b5b-47c9-8a20-113920a371fd",
+                    "path": "",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Climb",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "65ff1f76-034a-4ca5-a4a6-81601ef22b8a",
+                    "path": "<Keyboard>/z",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Climb",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }
