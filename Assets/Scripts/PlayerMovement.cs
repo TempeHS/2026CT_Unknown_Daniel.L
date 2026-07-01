@@ -2,67 +2,121 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+[RequireComponent(typeof(Rigidbody2D))]
 public class PlayerMovement : MonoBehaviour
 {
-    [Header("Movement")]
-    [SerializeField] private float maxSpeed    = 9f;
-    [SerializeField] private float runAccel    = 100f;  // accel toward max speed
-    [SerializeField] private float runReduce   = 40f;   // gentle bleed when over max (preserves dash momentum)
-    [SerializeField] private float airMult     = 0.65f;
+    [Header("Run")]
+    [SerializeField] private float maxSpeed  = 9f;
+    [SerializeField] private float runAccel  = 100f;
+    [SerializeField] private float runReduce = 40f;    // gentle bleed when over max (keeps dash/walljump momentum)
+    [SerializeField] private float airMult   = 0.65f;
 
     [Header("Jump")]
-    [SerializeField] private float jumpSpeed       = 18f;
-    [SerializeField] private float jumpHBoost      = 4f;
-    [SerializeField] private float varJumpTime     = 0.2f;
-    [SerializeField] private float coyoteTime      = 0.1f;
-    [SerializeField] private float jumpBufferTime  = 0.1f;
-    [SerializeField] private float fallMultiplier  = 2.5f;
-    [SerializeField] private float lowJumpMult     = 2f;
-    [SerializeField] private float gravityScale    = 4f;
+    [SerializeField] private float jumpForce      = 18f;
+    [SerializeField] private float jumpHBoost     = 4f;
+    [SerializeField] private float varJumpTime    = 0.2f;   // how long holding jump keeps you rising
+    [SerializeField] private float coyoteTime     = 0.1f;
+    [SerializeField] private float jumpBufferTime = 0.1f;
+    [SerializeField] private float gravityScale   = 4f;
+    [SerializeField] private float fallMultiplier = 2.5f;
+    [SerializeField] private float maxFallSpeed   = 20f;
+    [SerializeField] private float fastFallSpeed  = 30f;
 
-    [Header("Dash")]
-    [SerializeField] private float dashSpeed    = 24f;
-    [SerializeField] private float dashDuration = 0.15f;
-    [SerializeField] private float dashCooldown = 0.15f;
+    [Header("Wall Jump")]
+    [SerializeField] private float wallJumpHSpeed  = 13f;
+    [SerializeField] private float wallJumpForceT  = 0.16f; // input locked away from wall this long
 
     [Header("Climb")]
     [SerializeField] private float climbUpSpeed   = 5f;
     [SerializeField] private float climbDownSpeed = 8f;
+    [SerializeField] private float climbSlipSpeed = 3f;     // slide down when out of stamina
+    [SerializeField] private float wallSlideSpeed = 2f;     // slow fall when pressed to wall
+    [SerializeField] private float maxStamina     = 110f;
+    [SerializeField] private float climbUpCost     = 45f;   // stamina/sec climbing up
+    [SerializeField] private float climbStillCost  = 10f;   // stamina/sec hanging still
+    [SerializeField] private float climbJumpCost   = 27f;
 
-    [Header("Detection")]
-    [SerializeField] private LayerMask groundLayer;
+    [Header("Dash")]
+    [SerializeField] private float dashSpeed    = 24f;
+    [SerializeField] private float dashDuration = 0.15f;
+    [SerializeField] private float dashEndSpeed = 16f;      // speed retained after dash
+    [SerializeField] private float dashCooldown = 0.2f;
 
-    private Rigidbody2D   rb;
-    private BoxCollider2D coll;
+    // Components
+    private Rigidbody2D    rb;
+    private Collider2D     coll;
     private SpriteRenderer sprite;
+    private readonly Collider2D[] _hits = new Collider2D[8];
 
+    // Input
     private Vector2 moveInput;
+    private bool    jumpHeld, climbHeld;
+
+    // Jump state
     private float coyoteCounter, jumpBufferCounter, varJumpCounter, varJumpSpeed;
-    private bool  jumpHeld, canDash = true, isDashing, dashOnCooldown, climbHeld;
-    private int   facingDir = 1;
+    private int   forceMoveX;
+    private float forceMoveXTimer;
+    private bool  jumpedThisFrame;
+
+    // Dash state
+    private bool  canDash = true, isDashing, dashOnCooldown;
+
+    // Climb
+    private float stamina;
+    private bool  isClimbing;
+
+    private int facingDir = 1;
 
     void Awake()
     {
-        rb     = GetComponent<Rigidbody2D>();
-        coll   = GetComponent<BoxCollider2D>();
-        sprite = GetComponent<SpriteRenderer>();
+        rb        = GetComponent<Rigidbody2D>();
+        coll      = GetComponent<Collider2D>();
+        if (coll == null) coll = GetComponentInChildren<Collider2D>();   // collider may live on a child
+        sprite    = GetComponent<SpriteRenderer>();
+        if (sprite == null) sprite = GetComponentInChildren<SpriteRenderer>();
+        stamina   = maxStamina;
         rb.gravityScale = gravityScale;
+
+        if (coll == null)
+        {
+            Debug.LogError("PlayerMovement: no Collider2D found on " + name + " or its children. Add a Collider2D.", this);
+            enabled = false;
+            return;
+        }
+
+        var mat = new PhysicsMaterial2D { friction = 0f, bounciness = 0f };
+        coll.sharedMaterial = mat;
     }
 
     void Update()
     {
-        if (IsGrounded()) { coyoteCounter = coyoteTime; if (!dashOnCooldown) canDash = true; }
-        else              coyoteCounter -= Time.deltaTime;
+        jumpedThisFrame = false;
+        bool grounded = IsGrounded();
 
+        // Refresh on ground
+        if (grounded)
+        {
+            coyoteCounter = coyoteTime;
+            if (!dashOnCooldown) canDash = true;
+            stamina = maxStamina;
+        }
+        else coyoteCounter -= Time.deltaTime;
+
+        // Timers
         jumpBufferCounter -= Time.deltaTime;
         varJumpCounter    -= Time.deltaTime;
+        if (forceMoveXTimer > 0f) forceMoveXTimer -= Time.deltaTime;
+        if (!jumpHeld) varJumpCounter = 0f;   // release cancels rise
 
-        // Cancel variable jump window immediately on button release (Celeste behaviour)
-        if (!jumpHeld) varJumpCounter = 0f;
+        // Jump priority: wall jump when airborne against a wall, else ground/coyote jump
+        if (jumpBufferCounter > 0f)
+        {
+            if (coyoteCounter > 0f && !isClimbing) Jump();
+            else if (!grounded && TouchingWall(out int wallDir)) WallJump(wallDir);
+            else if (isClimbing) ClimbJump();
+        }
 
-        bool climbing = climbHeld && IsTouchingWall();
-        if (jumpBufferCounter > 0f && coyoteCounter > 0f && !climbing) Jump();
-
+        // Facing
         if (moveInput.x != 0)
         {
             facingDir = moveInput.x > 0 ? 1 : -1;
@@ -75,48 +129,87 @@ public class PlayerMovement : MonoBehaviour
         if (isDashing) return;
 
         bool grounded = IsGrounded();
-        bool climbing = climbHeld && IsTouchingWall();
 
-        if (climbing)
+        // ── Climb ──────────────────────────────────────────────
+        isClimbing = climbHeld && !grounded && TouchingWall(out int cDir) && cDir == facingDir;
+        if (isClimbing)
         {
             rb.gravityScale = 0f;
-            // moveInput.y > 0 = up key = move up (positive Y in Unity)
-            float vy = moveInput.y > 0 ? climbUpSpeed : (moveInput.y < 0 ? -climbDownSpeed : 0f);
+            float vy;
+            if (stamina <= 0f)             { vy = -climbSlipSpeed; }                                       // out of stamina: slip down
+            else if (moveInput.y > 0)      { vy = climbUpSpeed;   stamina -= climbUpCost   * Time.fixedDeltaTime; }
+            else if (moveInput.y < 0)      { vy = -climbDownSpeed; }
+            else                           { vy = 0f;             stamina -= climbStillCost * Time.fixedDeltaTime; }
             rb.linearVelocity = new Vector2(0f, vy);
+            return;
+        }
+
+        // ── Horizontal (momentum preserving) ───────────────────
+        float inputX = moveInput.x;
+        if (forceMoveXTimer > 0f) inputX = forceMoveX;   // locked away from wall after a wall jump
+
+        float mult   = grounded ? 1f : airMult;
+        float target = inputX * maxSpeed;
+        float vx     = rb.linearVelocity.x;
+        bool  over   = Mathf.Abs(vx) > maxSpeed && Mathf.Sign(vx) == Mathf.Sign(target);
+        vx = Mathf.MoveTowards(vx, target, (over ? runReduce : runAccel) * mult * Time.fixedDeltaTime);
+
+        // ── Vertical / gravity ─────────────────────────────────
+        float vyOut = rb.linearVelocity.y;
+
+        if (grounded)
+        {
+            rb.gravityScale = gravityScale;
         }
         else
         {
-            // Horizontal — Celeste-style: bleed excess speed slowly, accelerate to max quickly
-            float mult   = grounded ? 1f : airMult;
-            float target = moveInput.x * maxSpeed;
-            float vx     = rb.linearVelocity.x;
-            bool  overMax = Mathf.Abs(vx) > maxSpeed && Mathf.Sign(vx) == Mathf.Sign(moveInput.x);
-            float rate    = overMax ? runReduce : runAccel;
-            // Use AddForce so tilemap collision responses aren't overridden
-            float forceFactor = (Mathf.MoveTowards(vx, target, rate * mult * Time.fixedDeltaTime) - vx) / Time.fixedDeltaTime;
-            rb.AddForce(Vector2.right * forceFactor, ForceMode2D.Force);
-
-            float vy = rb.linearVelocity.y;
-
-            // Variable jump: clamp upward speed to initial jump speed while holding (Celeste-style)
+            // Variable jump: keep rising while holding
             if (varJumpCounter > 0f && jumpHeld)
-                vy = Mathf.Max(vy, varJumpSpeed);
+                vyOut = Mathf.Max(vyOut, varJumpSpeed);
 
-            // Gravity tweaks
-            if (vy < 0)
-                rb.gravityScale = gravityScale * fallMultiplier;
-            else if (vy > 0 && varJumpCounter <= 0f)
-                rb.gravityScale = gravityScale * lowJumpMult;
-            else
-                rb.gravityScale = gravityScale;
+            if (vyOut < 0f) rb.gravityScale = gravityScale * fallMultiplier;
+            else            rb.gravityScale = gravityScale;
 
-            if (varJumpCounter > 0f && jumpHeld)
-                rb.linearVelocity = new Vector2(rb.linearVelocity.x, vy);
+            // Wall slide: slow the fall when pressing into a wall
+            if (vyOut < 0f && climbHeld && TouchingWall(out int wd) && wd == facingDir)
+                vyOut = Mathf.Max(vyOut, -wallSlideSpeed);
+
+            // Clamp fall speed (fast-fall when holding down)
+            float capFall = (moveInput.y < 0) ? fastFallSpeed : maxFallSpeed;
+            if (vyOut < -capFall) vyOut = -capFall;
         }
+
+        rb.linearVelocity = new Vector2(vx, vyOut);
     }
 
-    // Input callbacks
-    public void OnMove(InputAction.CallbackContext ctx) => moveInput = ctx.ReadValue<Vector2>();
+    // ── Detection — no layer setup needed, self-collider excluded by reference ──
+    private bool OverlapSolid(Vector2 pos, Vector2 size)
+    {
+        int count = Physics2D.OverlapBoxNonAlloc(pos, size, 0f, _hits);
+        for (int i = 0; i < count; i++)
+            if (_hits[i] != null && _hits[i] != coll && _hits[i].transform.root != transform.root)
+                return true;
+        return false;
+    }
+
+    private bool IsGrounded()
+    {
+        if (jumpedThisFrame) return false;
+        var b = coll.bounds;
+        return OverlapSolid(new Vector2(b.center.x, b.min.y), new Vector2(b.size.x - 0.04f, 0.1f));
+    }
+
+    private bool TouchingWall(out int dir)
+    {
+        var b = coll.bounds;
+        Vector2 size = new Vector2(0.1f, b.size.y - 0.1f);
+        if (OverlapSolid(new Vector2(b.max.x + 0.02f, b.center.y), size)) { dir =  1; return true; }
+        if (OverlapSolid(new Vector2(b.min.x - 0.02f, b.center.y), size)) { dir = -1; return true; }
+        dir = 0; return false;
+    }
+
+    // ── Input callbacks ──
+    public void OnMove(InputAction.CallbackContext ctx)  => moveInput = ctx.ReadValue<Vector2>();
 
     public void OnJump(InputAction.CallbackContext ctx)
     {
@@ -135,52 +228,68 @@ public class PlayerMovement : MonoBehaviour
         if (ctx.canceled) climbHeld = false;
     }
 
+    // ── Actions ──
     private void Jump()
     {
-        varJumpSpeed      = jumpSpeed;
-        rb.linearVelocity = new Vector2(rb.linearVelocity.x + moveInput.x * jumpHBoost, jumpSpeed);
-        varJumpCounter    = varJumpTime;
+        jumpedThisFrame   = true;
         coyoteCounter     = 0f;
         jumpBufferCounter = 0f;
+        varJumpCounter    = varJumpTime;
+        varJumpSpeed      = jumpForce;
+        rb.gravityScale   = gravityScale;
+        rb.linearVelocity = new Vector2(rb.linearVelocity.x + moveInput.x * jumpHBoost, jumpForce);
+    }
+
+    private void WallJump(int wallDir)
+    {
+        jumpBufferCounter = 0f;
+        varJumpCounter    = varJumpTime;
+        varJumpSpeed      = jumpForce;
+        // push away from the wall and lock input briefly so you actually leave it
+        forceMoveX      = -wallDir;
+        forceMoveXTimer = wallJumpForceT;
+        rb.gravityScale   = gravityScale;
+        rb.linearVelocity = new Vector2(-wallDir * wallJumpHSpeed, jumpForce);
+    }
+
+    private void ClimbJump()
+    {
+        if (stamina <= 0f) return;
+        stamina -= climbJumpCost;
+        isClimbing = false;
+        int wallDir = facingDir;
+        forceMoveX      = -wallDir;
+        forceMoveXTimer = wallJumpForceT;
+        jumpBufferCounter = 0f;
+        varJumpCounter    = varJumpTime;
+        varJumpSpeed      = jumpForce;
+        rb.gravityScale   = gravityScale;
+        rb.linearVelocity = new Vector2(-wallDir * wallJumpHSpeed, jumpForce);
     }
 
     private IEnumerator Dash()
     {
-        canDash        = false;
-        isDashing      = true;
-        dashOnCooldown = true;
+        canDash = false; isDashing = true; dashOnCooldown = true;
+        varJumpCounter = 0f;
 
-        float savedGravity    = rb.gravityScale;
-        rb.gravityScale       = 0f;
-        Vector2 dir           = moveInput.normalized;
+        float savedGravity = rb.gravityScale;
+        rb.gravityScale    = 0f;
+
+        Vector2 dir = moveInput.normalized;
         if (dir == Vector2.zero) dir = new Vector2(facingDir, 0f);
-        rb.linearVelocity     = dir * dashSpeed;
+        rb.linearVelocity = dir * dashSpeed;
 
         yield return new WaitForSeconds(dashDuration);
 
-        // Preserve horizontal momentum, cancel upward speed (like Celeste's EndDash)
-        rb.linearVelocity = new Vector2(rb.linearVelocity.x, Mathf.Min(rb.linearVelocity.y, 0f));
+        // Retain a portion of speed in the dash direction; kill upward so you fall naturally
+        Vector2 end = dir * dashEndSpeed;
+        if (end.y > 0f) end.y = 0f;
+        rb.linearVelocity = end;
         rb.gravityScale   = savedGravity;
         isDashing         = false;
 
         yield return new WaitForSeconds(dashCooldown);
         dashOnCooldown = false;
         if (IsGrounded()) canDash = true;
-    }
-
-    private bool IsGrounded() =>
-        Physics2D.BoxCast(coll.bounds.center, new Vector2(coll.bounds.size.x - 0.1f, 0.05f),
-            0f, Vector2.down, coll.bounds.extents.y + 0.1f, groundLayer).collider != null;
-
-    private bool IsTouchingWall()
-    {
-        // Cast from center outward — avoids starting inside tilemap colliders
-        float dist = coll.bounds.extents.x + 0.1f;
-        float cy   = coll.bounds.center.y;
-        float cx   = coll.bounds.center.x;
-        float h    = coll.bounds.extents.y * 0.45f;
-        Vector2 dir = new Vector2(facingDir, 0f);
-        return Physics2D.Raycast(new Vector2(cx, cy + h), dir, dist, groundLayer)
-            || Physics2D.Raycast(new Vector2(cx, cy - h), dir, dist, groundLayer);
     }
 }

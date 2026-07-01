@@ -2728,22 +2728,29 @@ MonoBehaviour:
   runAccel: 100
   runReduce: 40
   airMult: 0.65
-  jumpSpeed: 18
+  jumpForce: 9
   jumpHBoost: 4
   varJumpTime: 0.2
   coyoteTime: 0.1
   jumpBufferTime: 0.15
-  fallMultiplier: 2.5
-  lowJumpMult: 2
   gravityScale: 4
-  dashSpeed: 24
-  dashDuration: 0.15
-  dashCooldown: 0.1
+  fallMultiplier: 2.5
+  maxFallSpeed: 20
+  fastFallSpeed: 30
+  wallJumpHSpeed: 13
+  wallJumpForceT: 0.16
   climbUpSpeed: 5
   climbDownSpeed: 8
-  groundLayer:
-    serializedVersion: 2
-    m_Bits: 64
+  climbSlipSpeed: 3
+  wallSlideSpeed: 2
+  maxStamina: 110
+  climbUpCost: 45
+  climbStillCost: 10
+  climbJumpCost: 27
+  dashSpeed: 24
+  dashDuration: 0.15
+  dashEndSpeed: 16
+  dashCooldown: 0.1
 --- !u!114 &836904725
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2909,7 +2916,7 @@ Rigidbody2D:
   m_ExcludeLayers:
     serializedVersion: 2
     m_Bits: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_SleepingMode: 1
   m_CollisionDetection: 1
   m_Constraints: 4
